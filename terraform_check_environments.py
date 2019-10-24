@@ -1,5 +1,10 @@
+import argparse
+import concurrent.futures
+from functools import partial
+import os
 from pathlib import Path, PurePath
 import subprocess
+from termcolor import colored
 
 
 EXCLUDE_PATHS_LIST = [
@@ -41,18 +46,26 @@ def get_tf_init_command(with_manifest):
     return tf_init
 
 
-def execute_tf_init_command(path, tf_init):
-    print(path, ": ", tf_init)
+def execute_tf_init_command(tf_init, path):
+    FNULL = open(os.devnull, 'w')
     subprocess.run(
         'rm .terraform -rf', shell=True, cwd=path)
-    subprocess.run(
-        tf_init, shell=True, cwd=path)
+    process = subprocess.run(
+        tf_init, shell=True, cwd=path, stdout=FNULL)
+    if process.returncode == 0:
+        output_text = colored(f'{path}: INIT OK', 'green')
+    else:
+        output_text = colored(
+            f'{path}: INIT FAILED with exit code: {process.returncode}', 'red')
+    print(output_text)
+    return process.returncode
 
 
-def terraform_init(paths_list, with_manifest=False):
+def terraform_init(paths_list, *, with_manifest=False):
     tf_init = get_tf_init_command(with_manifest)
-    for path in paths_list:
-        execute_tf_init_command(path, tf_init)
+    parallel_init_fn = partial(execute_tf_init_command, tf_init)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        executor.map(parallel_init_fn, paths_list)
 
 
 def get_tf_plan_command(path=''):
@@ -105,8 +118,8 @@ def main():
     terraform_plan(legacy_envs)
 
     manifest_envs = get_matching_folders('backend.tfvars')
-    terraform_init(manifest_envs, True)
-    terraform_plan(manifest_envs, True)
+    terraform_init(manifest_envs, with_manifest=True)
+    terraform_plan(manifest_envs, with_manifest=True)
 
     display_results(EXIT_STATUS)
 
