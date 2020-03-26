@@ -14,9 +14,7 @@ EXCLUDE_PATHS_LIST = [
 
 EXIT_STATUS = {0: [], 1: [], 2: []}
 
-
-def add_to_results(result, path):
-    EXIT_STATUS[result].append(path)
+SPEEDUP_TFVARS = os.path.dirname(__file__) + "/speedup_terraform.tfvars"
 
 
 def print_result_block(envs_list, name):
@@ -42,7 +40,8 @@ def get_tf_init_command(with_manifest):
     extra_argument = ''
     if with_manifest:
         extra_argument = '-backend-config=backend.tfvars ../manifests'
-    tf_init = 'terraform init ' + extra_argument
+    tf_init = 'terraform init -backend-config=' + \
+        SPEEDUP_TFVARS + ' ' + extra_argument
     return tf_init
 
 
@@ -64,14 +63,14 @@ def execute_tf_init_command(tf_init, path):
 def terraform_init(paths_list, *, with_manifest=False):
     tf_init = get_tf_init_command(with_manifest)
     parallel_init_fn = partial(execute_tf_init_command, tf_init)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         executor.map(parallel_init_fn, paths_list)
 
 
-def get_tf_plan_command(path=''):
+def get_tf_plan_command(path='', with_manifest=False):
     tf_apply_basic_command = 'terraform plan -detailed-exitcode -no-color '
     extra_arguments = ''
-    if path:
+    if with_manifest:
         vars_file = PurePath(path).name + '.tfvars'
         extra_arguments = '-var-file=' + vars_file + ' ../manifests'
     tf_plan = tf_apply_basic_command + extra_arguments
@@ -86,14 +85,16 @@ def execute_tf_plan_command(path, tf_plan):
 
 
 def terraform_plan(paths_list, with_manifest=False):
+    result = {0: [], 1: [], 2: []}
     for path in paths_list:
-        tf_apply_command = get_tf_plan_command()
-        result = execute_tf_plan_command(path, tf_apply_command)
-        add_to_results(result, path)
+        tf_apply_command = get_tf_plan_command(path, with_manifest)
+        exitcode = execute_tf_plan_command(path, tf_apply_command)
+        result[exitcode].append(path)
+    return result
 
 
 def is_excluded(selected_path, excluded_path):
-    return selected_path.as_posix().find(excluded_path) != -1
+    return selected_path.as_posix().find(str(excluded_path)) != -1
 
 
 def is_undesired_path(selected_path, excluded_paths):
@@ -112,16 +113,18 @@ def get_matching_folders(pattern, excluded_paths=[], basedir='./', subdirs='**/'
 
 
 def main():
+
     legacy_envs = get_matching_folders(
         'terraform.tf', ['manifests'])
     terraform_init(legacy_envs)
-    terraform_plan(legacy_envs)
+    result_legacy = terraform_plan(legacy_envs)
 
-    manifest_envs = get_matching_folders('backend.tfvars')
+    manifest_envs = get_matching_folders(
+        'backend.tfvars', excluded_paths=legacy_envs)
     terraform_init(manifest_envs, with_manifest=True)
-    terraform_plan(manifest_envs, with_manifest=True)
+    result_manifests = terraform_plan(manifest_envs, with_manifest=True)
 
-    display_results(EXIT_STATUS)
+    display_results({**result_legacy, **result_manifests})
 
 
 if __name__ == '__main__':
