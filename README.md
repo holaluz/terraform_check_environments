@@ -31,7 +31,6 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 - Parametrize subdirs (and allow it as argv)
 - Parametrize `get_matching_folders` to allow different patterns
 - Add tests
-- Paralelize some of the steps (terraform init could be launched in parallel)
 - Update flag processing
 
 
