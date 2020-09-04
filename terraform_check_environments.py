@@ -14,8 +14,6 @@ EXCLUDE_PATHS_LIST = [
 
 EXIT_STATUS = {0: [], 1: [], 2: []}
 
-SPEEDUP_TFVARS = os.path.dirname(__file__) + "/speedup_terraform.tfvars"
-
 
 def print_result_block(envs_list, name):
     if not envs_list:
@@ -40,8 +38,7 @@ def get_tf_init_command(with_manifest):
     extra_argument = ''
     if with_manifest:
         extra_argument = '-backend-config=backend.tfvars ../manifests'
-    tf_init = 'terraform init -backend-config=' + \
-        SPEEDUP_TFVARS + ' ' + extra_argument
+    tf_init = 'terraform init ' + extra_argument
     return tf_init
 
 
