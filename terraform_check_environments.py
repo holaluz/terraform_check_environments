@@ -7,12 +7,6 @@ import subprocess
 from termcolor import colored
 import configparser
 
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-EXCLUDE_PATHS_LIST = [path.strip() for path in config.get(
-    "DEFAULT", "EXCLUDE_PATHS_LIST").split(',')]
-
 EXIT_STATUS = {0: [], 1: [], 2: []}
 
 
@@ -96,7 +90,7 @@ def is_excluded(selected_path, excluded_path):
 
 
 def is_undesired_path(selected_path, excluded_paths):
-    for ep in excluded_paths + EXCLUDE_PATHS_LIST:
+    for ep in excluded_paths:
         if is_excluded(selected_path, ep):
             return True
     return False
@@ -110,15 +104,23 @@ def get_matching_folders(pattern, excluded_paths=[], basedir='./', subdirs='**/'
     return folders_list
 
 
-def main():
+def get_config_excluded_paths_list():
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+    paths_list = [path.strip() for path in config.get(
+        "DEFAULT", "EXCLUDE_PATHS_LIST").split(',')]
+    return paths_list
 
+
+def main():
+    config_excluded_paths_list = get_config_excluded_paths_list()
     legacy_envs = get_matching_folders(
-        'terraform.tf', ['manifests'])
+        'terraform.tf', excluded_paths=['manifests'] + config_excluded_paths_list)
     terraform_init(legacy_envs)
     result_legacy = terraform_plan(legacy_envs)
 
     manifest_envs = get_matching_folders(
-        'backend.tfvars', excluded_paths=legacy_envs)
+        'backend.tfvars', excluded_paths=legacy_envs + config_excluded_paths_list)
     terraform_init(manifest_envs, with_manifest=True)
     result_manifests = terraform_plan(manifest_envs, with_manifest=True)
 
