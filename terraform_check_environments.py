@@ -6,6 +6,7 @@ from pathlib import Path, PurePath
 import subprocess
 from termcolor import colored
 import configparser
+from shutil import rmtree
 
 
 def print_result_block(envs_list, name):
@@ -37,8 +38,6 @@ def get_tf_init_command(with_manifest):
 
 def execute_tf_init_command(tf_init, path):
     FNULL = open(os.devnull, 'w')
-    subprocess.run(
-        'rm .terraform -rf', shell=True, cwd=path)
     process = subprocess.run(
         tf_init, shell=True, cwd=path, stdout=FNULL)
     if process.returncode == 0:
@@ -102,6 +101,11 @@ def get_matching_folders(pattern, excluded_paths=[], basedir='./', subdirs='**/'
     return folders_list
 
 
+def terraform_clean(paths_list, with_manifest=False):
+    for path in paths_list:
+        rmtree(str(path) + '/.terraform', ignore_errors=True)
+
+
 def get_config_excluded_paths_list():
     config = configparser.ConfigParser()
     config.read('config.ini')
@@ -114,11 +118,13 @@ def main():
     config_excluded_paths_list = get_config_excluded_paths_list()
     legacy_envs = get_matching_folders(
         'terraform.tf', excluded_paths=['manifests'] + config_excluded_paths_list)
+    terraform_clean(legacy_envs)
     terraform_init(legacy_envs)
     result_legacy = terraform_plan(legacy_envs)
 
     manifest_envs = get_matching_folders(
         'backend.tfvars', excluded_paths=legacy_envs + config_excluded_paths_list)
+    terraform_clean(manifest_envs)
     terraform_init(manifest_envs, with_manifest=True)
     result_manifests = terraform_plan(manifest_envs, with_manifest=True)
 
