@@ -7,8 +7,6 @@ import subprocess
 from termcolor import colored
 import configparser
 
-EXIT_STATUS = {0: [], 1: [], 2: []}
-
 
 def print_result_block(envs_list, name):
     if not envs_list:
