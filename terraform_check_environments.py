@@ -5,12 +5,13 @@ import os
 from pathlib import Path, PurePath
 import subprocess
 from termcolor import colored
+import configparser
 
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-EXCLUDE_PATHS_LIST = [
-    'demo',
-    'demo2'
-]
+EXCLUDE_PATHS_LIST = [path.strip() for path in config.get(
+    "DEFAULT", "EXCLUDE_PATHS_LIST").split(',')]
 
 EXIT_STATUS = {0: [], 1: [], 2: []}
 
