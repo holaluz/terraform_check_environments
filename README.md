@@ -6,7 +6,7 @@ This script is useful to check changes in several Terraform environments.
 
 You need an environment with `python3.7` or avobe.
 You need to install the requirements in requirements.txt with pip:
-`pip install -r requirements.txt`
+`pip3 install -r requirements.txt`
 
 
 ### How to exclude directories from the check

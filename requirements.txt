@@ -1,2 +1,4 @@
+futures3
+configparser
 pathlib
 termcolor

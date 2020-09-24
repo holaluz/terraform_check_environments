@@ -1,6 +1,5 @@
 import argparse
 import concurrent.futures
-from functools import partial
 import os
 from pathlib import Path, PurePath
 import subprocess
@@ -8,82 +7,83 @@ from termcolor import colored
 import configparser
 
 
-EXIT_STATUS = {0: [], 1: [], 2: []}
+class tf_environment:
+
+    def __init__(self, path, has_manifest=True):
+        self.result = -1
+        self.path = path
+        self.has_manifest = has_manifest
+
+    def init_command(self):
+        extra_argument = ''
+        if self.has_manifest:
+            extra_argument = '-backend-config=backend.tfvars ../manifests'
+        tf_init = 'terraform init ' + extra_argument
+        return tf_init
+
+    def plan_command(self):
+        extra_arguments = ''
+        if self.has_manifest:
+            vars_file = PurePath(self.path).name + '.tfvars'
+            extra_arguments = '-var-file=' + vars_file + ' ../manifests'
+        tf_apply_basic_command = 'terraform plan -input=false -detailed-exitcode '
+        tf_plan = tf_apply_basic_command + extra_arguments
+        return tf_plan
 
 
-def print_result_block(envs_list, name):
-    if not envs_list:
-        return 0
+def print_result_block(envs_list, name, status):
+    count = 0
     print("## ", name, " ##")
-    for environment in envs_list:
-        print("  ", environment)
+    for env in envs_list:
+        if env.result == status:
+            print("  ", env.path)
+            count += 1
+    return count
 
 
-def display_results(results):
-    print_result_block(results[0], "NO PENDING CHANGES")
-    print_result_block(results[1], "ENVIRONMENTS WITH ERRORS")
-    print_result_block(results[2], "PENDING CHANGES")
+def display_results(envs):
+    not_executed = print_result_block(envs, "NOT EXECUTED", -1)
+    ok = print_result_block(envs, "OK", 0)
+    pending_changes = print_result_block(envs, "PENDING CHANGES", 2)
+    init_errors = print_result_block(envs, "INIT ERRORS", 5)
+    plan_errors = print_result_block(envs, "PLAN ERRORS", 1)
     print("General status:")
-    print("TOTAL: ", len(results[0])+len(results[1])+len(results[2]))
-    print("ENVIRONMENT OK: ", len(results[0]))
-    print("ENVIRONMENT PENDING CHANGES: ", len(results[2]))
-    print("ENVIRONMENT ERRORS: ", len(results[1]))
+    print("TOTAL: ", len(envs))
+    print("ENVIRONMENT OK: ", ok)
+    print("ENVIRONMENT PENDING CHANGES: ", pending_changes)
+    print("ENVIRONMENT ERRORS: ", init_errors + plan_errors)
 
 
-def get_tf_init_command(with_manifest):
-    extra_argument = ''
-    if with_manifest:
-        extra_argument = '-backend-config=backend.tfvars ../manifests'
-    tf_init = 'terraform init ' + extra_argument
-    return tf_init
-
-
-def execute_tf_init_command(tf_init, path):
+def terraform_init(env):
+    print(colored(f'{env.path}: START terraform init', 'cyan'))
     FNULL = open(os.devnull, 'w')
     subprocess.run(
-        'rm .terraform -rf', shell=True, cwd=path)
+        'rm .terraform -rf', shell=True, cwd=env.path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     process = subprocess.run(
-        tf_init, shell=True, cwd=path, stdout=FNULL)
+        env.init_command(), shell=True, cwd=env.path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if process.returncode == 0:
-        output_text = colored(f'{path}: INIT OK', 'green')
+        output_text = colored(f'{env.path}: END terraform init OK', 'green')
     else:
         output_text = colored(
-            f'{path}: INIT FAILED with exit code: {process.returncode}', 'red')
+            f'{env.path}: END terraform init FAILED', 'red')
+        self.result = 5
     print(output_text)
     return process.returncode
 
 
-def terraform_init(paths_list, *, with_manifest=False):
-    tf_init = get_tf_init_command(with_manifest)
-    parallel_init_fn = partial(execute_tf_init_command, tf_init)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        executor.map(parallel_init_fn, paths_list)
-
-
-def get_tf_plan_command(path='', with_manifest=False):
-    tf_apply_basic_command = 'terraform plan -detailed-exitcode -no-color '
-    extra_arguments = ''
-    if with_manifest:
-        vars_file = PurePath(path).name + '.tfvars'
-        extra_arguments = '-var-file=' + vars_file + ' ../manifests'
-    tf_plan = tf_apply_basic_command + extra_arguments
-    return tf_plan
-
-
-def execute_tf_plan_command(path, tf_plan):
-    print(path, ": ", tf_plan)
-    process = subprocess.run(
-        tf_plan, shell=True, cwd=path)
-    return process.returncode
-
-
-def terraform_plan(paths_list, with_manifest=False):
-    result = {0: [], 1: [], 2: []}
-    for path in paths_list:
-        tf_apply_command = get_tf_plan_command(path, with_manifest)
-        exitcode = execute_tf_plan_command(path, tf_apply_command)
-        result[exitcode].append(path)
-    return result
+def terraform_plan(env):
+    print(colored(f'{env.path}: START terraform plan', 'blue'))
+    if env.result == -1:
+        process = subprocess.run(
+            env.plan_command(), shell=True, cwd=env.path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if process.returncode == 0:
+            output_text = colored(
+                f'{env.path}: END terraform plan OK', 'green')
+        else:
+            output_text = colored(
+                f'{env.path}: END terraform plan FAILED. Exit code: {process.returncode}', 'red')
+        env.result = process.returncode
+        print(output_text)
 
 
 def is_excluded(selected_path, excluded_path):
@@ -97,12 +97,18 @@ def is_undesired_path(selected_path, excluded_paths):
     return False
 
 
-def get_matching_folders(pattern, excluded_paths=[], basedir='./', subdirs='**/'):
-    folders_list = []
-    for filename in Path('.').glob(basedir + subdirs + pattern):
+def get_environments(pattern, excluded_paths=[], with_manifests=True):
+    envs_list = []
+    paths_list = []
+    for filename in Path('.').glob('./' + '**/' + pattern):
         if not is_undesired_path(filename, ['.terraform'] + excluded_paths):
-            folders_list.append(filename.parent)
-    return folders_list
+            envs_list.append(
+                tf_environment(
+                    path=filename.parent,
+                    has_manifest=with_manifests
+                ))
+            paths_list.append(filename.parent)
+    return envs_list, paths_list
 
 
 def get_excluded_paths():
@@ -119,17 +125,24 @@ def get_excluded_paths():
 
 def main():
 
-    legacy_envs = get_matching_folders(
-        'terraform.tf', ['manifests'])
-    terraform_init(legacy_envs)
-    result_legacy = terraform_plan(legacy_envs)
-    excluded_envs = get_excluded_paths() + legacy_envs
-    manifest_envs = get_matching_folders(
-        'backend.tfvars', excluded_paths=excluded_envs)
-    terraform_init(manifest_envs, with_manifest=True)
-    result_manifests = terraform_plan(manifest_envs, with_manifest=True)
+    legacy_envs, legacy_paths_list = get_environments(
+        pattern='terraform.tf',
+        excluded_paths=['manifests'],
+        with_manifests=False)
+    manifest_envs, _ = get_environments(
+        pattern='backend.tfvars',
+        excluded_paths=get_excluded_paths() + legacy_paths_list)
 
-    display_results({**result_legacy, **result_manifests})
+    envs = sorted(
+        legacy_envs + manifest_envs, key=lambda env: env.path)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        executor.map(terraform_init, envs)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        executor.map(terraform_plan, envs)
+
+    display_results(envs)
 
 
 if __name__ == '__main__':
