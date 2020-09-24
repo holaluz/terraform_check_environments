@@ -1,6 +1,6 @@
 # Terraform environments checker
 
-This script is useful to check changes in one (or several) Terraform environments.
+This script is useful to check changes in several Terraform environments.
 
 ## Getting Started
 
@@ -9,11 +9,10 @@ You need to install the requirements in requirements.txt with pip:
 `pip install -r requirements.txt`
 
 
-### How to use (customizations)
-At this point is not possible to configure through parameters (it will arrive ASAP), so:
-- Configure `basedir`, if your terraform environments are under `/home/USER/tf_environments/` change this value.
-- Configure `subdirs`: This "variable" allows you to define which subdirectories will be checked for terraform files, so if you want to check only application php/backend, you need to set as `php/backend`, or even, if you want to check only prod for this application `php/backend/prod`.
-- Configure `EXCLUDE_PATHS_LIST` in order to exclude these directories.
+### How to exclude directories from the check
+
+- Copy the example file "check_envs.ini.example" in the folder where you are launching python script as "check_envs.ini".
+- Fullfill the file with paths to exclude.
 
 
 ## Contributing

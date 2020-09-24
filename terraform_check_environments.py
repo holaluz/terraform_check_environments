@@ -5,12 +5,8 @@ import os
 from pathlib import Path, PurePath
 import subprocess
 from termcolor import colored
+import configparser
 
-
-EXCLUDE_PATHS_LIST = [
-    'demo',
-    'demo2'
-]
 
 EXIT_STATUS = {0: [], 1: [], 2: []}
 
@@ -95,7 +91,7 @@ def is_excluded(selected_path, excluded_path):
 
 
 def is_undesired_path(selected_path, excluded_paths):
-    for ep in excluded_paths + EXCLUDE_PATHS_LIST:
+    for ep in excluded_paths:
         if is_excluded(selected_path, ep):
             return True
     return False
@@ -109,15 +105,27 @@ def get_matching_folders(pattern, excluded_paths=[], basedir='./', subdirs='**/'
     return folders_list
 
 
+def get_excluded_paths():
+    excluded_paths_list = []
+
+    if os.path.exists('check_environments.ini'):
+        config = configparser.ConfigParser(allow_no_value=True)
+        # overwrite optionxform method for overriding default behaviour (I didn't want lowercased keys)
+        config.optionxform = lambda optionstr: optionstr
+        config.read('check_environments.ini')
+        excluded_paths_list = list(config['ExcludedPaths'].keys())
+    return excluded_paths_list
+
+
 def main():
 
     legacy_envs = get_matching_folders(
         'terraform.tf', ['manifests'])
     terraform_init(legacy_envs)
     result_legacy = terraform_plan(legacy_envs)
-
+    excluded_envs = get_excluded_paths() + legacy_envs
     manifest_envs = get_matching_folders(
-        'backend.tfvars', excluded_paths=legacy_envs)
+        'backend.tfvars', excluded_paths=excluded_envs)
     terraform_init(manifest_envs, with_manifest=True)
     result_manifests = terraform_plan(manifest_envs, with_manifest=True)
 
